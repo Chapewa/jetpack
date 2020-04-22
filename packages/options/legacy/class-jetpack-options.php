@@ -71,6 +71,7 @@ class Jetpack_Options {
 					'mapbox_api_key',              // (string) Mapbox API Key, for use with Map block.
 					'mailchimp',                   // (string) Mailchimp keyring data, for mailchimp block.
 					'xmlrpc_errors',               // (array) Keys are XML-RPC signature error codes. Values are truthy.
+					'plugins_disconnected_user_initiated', // (array)  Set of plugin slugs that aren't allowed to use `jetpack-connection` upon user request.
 				);
 
 			case 'private':

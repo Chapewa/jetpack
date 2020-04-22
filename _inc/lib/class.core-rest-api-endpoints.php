@@ -138,9 +138,16 @@ class Jetpack_Core_Json_Api_Endpoints {
 
 		// Fetches a fresh connect URL
 		register_rest_route( 'jetpack/v4', '/connection/url', array(
-			'methods' => WP_REST_Server::READABLE,
-			'callback' => __CLASS__ . '::build_connect_url',
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => __CLASS__ . '::build_connect_url',
 			'permission_callback' => __CLASS__ . '::connect_url_permission_callback',
+			'args'                => array(
+				'direct' => array(
+					'type'     => 'boolean',
+					'default'  => false,
+					'required' => false,
+				),
+			),
 		) );
 
 		// Get current user connection data
@@ -1269,8 +1276,13 @@ class Jetpack_Core_Json_Api_Endpoints {
 	 *
 	 * @return string|WP_Error A raw URL if the connection URL could be built; error message otherwise.
 	 */
-	public static function build_connect_url() {
-		$url = Jetpack::init()->build_connect_url( true, false, false );
+	public static function build_connect_url( $request ) {
+		if ( $request->get_param( 'direct' ) ) {
+			$url = Jetpack::init()->build_connect_url_direct( true, false, false );
+		} else {
+			$url = Jetpack::init()->build_connect_url( true, false, false );
+		}
+
 		if ( $url ) {
 			return rest_ensure_response( $url );
 		}

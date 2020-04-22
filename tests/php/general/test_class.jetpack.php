@@ -1177,7 +1177,7 @@ EXPECTED;
 			}
 		);
 		$jetpack = \Jetpack::init();
-		$url     = $jetpack->build_connect_url();
+		$url     = $jetpack->build_connect_url_direct();
 
 		$parsed_vars = array();
 		parse_str( wp_parse_url( $url, PHP_URL_QUERY ), $parsed_vars );

@@ -1642,7 +1642,8 @@ class Jetpack {
 	 * Is Jetpack active?
 	 */
 	public static function is_active() {
-		return (bool) Jetpack_Data::get_access_token( JETPACK_MASTER_USER );
+		$connection = new Connection_Manager( 'jetpack' );
+		return $connection->is_active() && $connection->is_plugin_enabled();
 	}
 
 	/**
@@ -3398,6 +3399,8 @@ p {
 
 		// Disable the Heartbeat cron
 		Jetpack_Heartbeat::init()->deactivate();
+
+		$connection->disconnect_user_initiated();
 	}
 
 	/**
@@ -3418,6 +3421,8 @@ p {
 	 * Attempts Jetpack registration.  If it fail, a state flag is set: @see ::admin_page_load()
 	 */
 	public static function try_registration() {
+		self::connection()->connect_user_initiated();
+
 		$terms_of_service = new Terms_Of_Service();
 		// The user has agreed to the TOS at some point by now.
 		$terms_of_service->agree();
@@ -4159,6 +4164,38 @@ p {
 
 		if ( isset( $_GET['action'] ) ) {
 			switch ( $_GET['action'] ) {
+				case 'connect_proxy':
+					if ( ! current_user_can( 'jetpack_connect' ) ) {
+						$error = 'cheatin';
+						break;
+					}
+
+					check_admin_referer( 'jetpack-connect-proxy' );
+
+					// Reactivating the plugin if needed.
+					self::connection()->connect_user_initiated();
+
+					$redirect = empty( $_GET['redirect'] ) ? false : wp_validate_redirect( $_GET['redirect'] );
+
+					if ( self::is_active() && self::connection()->is_user_connected() ) {
+						// Jetpack is already connected, forward the user to the redirect URL or Jetpack dashboard.
+						$url = $redirect ? $redirect : self::admin_url();
+					} else {
+						// Jetpack is not connected, forwarding the user to the connection URL.
+						$url = self::build_connect_url_direct(
+							true,
+							$redirect,
+							empty( $_GET['from'] ) ? false : $_GET['from'],
+							! empty( $_GET['register'] )
+						);
+
+						// We have to reapply all GET parameters to the actual connection URL, as there's a lot of code that relies on them.
+						// TODO: these parameters should be passed as an argument to the function, refactoring needed.
+						$url = add_query_arg( array_diff_key( $_GET, array_flip( array( 'redirect', 'from', 'register', 'page', 'action', '_wpnonce' ) ) ), $url );
+					}
+
+					wp_safe_redirect( $url );
+					exit;
 				case 'authorize':
 					if ( self::is_active() && self::is_user_connected() ) {
 						self::state( 'message', 'already_authorized' );
@@ -4207,7 +4244,7 @@ p {
 					 */
 					do_action( 'jetpack_connection_register_success', $from );
 
-					$url = $this->build_connect_url( true, $redirect, $from );
+					$url = $this->build_connect_url_direct( true, $redirect, $from );
 
 					if ( ! empty( $_GET['onboarding'] ) ) {
 						$url = add_query_arg( 'onboarding', $_GET['onboarding'], $url );
@@ -4701,21 +4738,65 @@ endif;
 	}
 
 	/**
-	 * Builds a URL to the Jetpack connection auth page
+	 * Builds the URL to the Jetpack connection proxy.
+	 * The proxy prepares Jetpack to be connected, and then redirects users to the actual connection URL.
+	 *
+	 * @since 8.5.0
+	 *
+	 * @param bool        $raw      If true, URL will not be escaped.
+	 * @param bool|string $redirect If true, will redirect back to Jetpack wp-admin landing page after connection.
+	 *                              If string, will be a custom redirect.
+	 * @param bool|string $from     If not false, adds 'from=$from' param to the connect URL.
+	 * @param bool        $register If true, will generate a register URL regardless of the existing token.
+	 *
+	 * @return string Connect URL
+	 *
+	 * @see Jetpack::build_connect_url_direct()
+	 */
+	public function build_connect_url( $raw = false, $redirect = false, $from = false, $register = false ) {
+		$url = self::nonce_url_no_esc(
+			self::admin_url(
+				array(
+					'action'   => 'connect_proxy',
+					'redirect' => $redirect ? rawurlencode( $redirect ) : false,
+					'from'     => $from ? rawurlencode( $from ) : false,
+					'register' => (bool) $register,
+				)
+			),
+			'jetpack-connect-proxy'
+		);
+
+		$url = $raw ? esc_url_raw( $url ) : esc_url( $url );
+
+		/**
+		 * Filter the connection proxy URL.
+		 *
+		 * @since 8.5.0
+		 *
+		 * @param string $url Connection URL.
+		 * @param bool   $raw If true, URL will not be escaped.
+		 */
+		return apply_filters( 'jetpack_build_connection_url_proxy', $url, $raw );
+	}
+
+	/**
+	 * Builds the direct URL to the Jetpack connection auth page, skipping proxy.
 	 *
 	 * @since 3.9.5
 	 *
-	 * @param bool        $raw If true, URL will not be escaped.
+	 * @param bool        $raw      If true, URL will not be escaped.
 	 * @param bool|string $redirect If true, will redirect back to Jetpack wp-admin landing page after connection.
 	 *                              If string, will be a custom redirect.
-	 * @param bool|string $from If not false, adds 'from=$from' param to the connect URL.
+	 * @param bool|string $from     If not false, adds 'from=$from' param to the connect URL.
 	 * @param bool        $register If true, will generate a register URL regardless of the existing token, since 4.9.0
 	 *
 	 * @return string Connect URL
+	 *
+	 * @see Jetpack::build_connect_url()
 	 */
-	function build_connect_url( $raw = false, $redirect = false, $from = false, $register = false ) {
+	public function build_connect_url_direct( $raw = false, $redirect = false, $from = false, $register = false ) {
 		$site_id    = Jetpack_Options::get_option( 'id' );
-		$blog_token = Jetpack_Data::get_access_token();
+		$blog_token = self::connection()->get_access_token();
 
 		if ( $register || ! $blog_token || ! $site_id ) {
 			$url = self::nonce_url_no_esc( self::admin_url( 'action=register' ), 'jetpack-register' );
@@ -4753,7 +4834,7 @@ endif;
 				if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
 
 					// Generating a register URL instead to refresh the existing token
-					return $this->build_connect_url( $raw, $redirect, $from, true );
+					return $this->build_connect_url_direct( $raw, $redirect, $from, true );
 				}
 			}
 

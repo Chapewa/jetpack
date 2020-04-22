@@ -574,7 +574,7 @@ class WP_Test_Jetpack_REST_API_endpoints extends WP_UnitTestCase {
 		$admin_url = wp_parse_url( admin_url() );
 
 		// Create REST request in JSON format and dispatch
-		$response = $this->create_and_get_request( 'connection/url' );
+		$response = $this->create_and_get_request( 'connection/url', array(), 'GET', array( 'direct' => true ) );
 
 		// Success, URL was built
 		$this->assertResponseStatus( 200, $response );
@@ -633,7 +633,7 @@ class WP_Test_Jetpack_REST_API_endpoints extends WP_UnitTestCase {
 		Jetpack_Options::update_option( 'id', '42' );
 
 		// Create REST request in JSON format and dispatch
-		$response = $this->create_and_get_request( 'connection/url' );
+		$response = $this->create_and_get_request( 'connection/url', array(), 'GET', array( 'direct' => true ) );
 
 		// Success, URL was built
 		$this->assertResponseStatus( 200, $response );
@@ -652,6 +652,38 @@ class WP_Test_Jetpack_REST_API_endpoints extends WP_UnitTestCase {
 				'host'   => 'example.org',
 				'path'   => '/wp-admin/admin.php'
 			), $response
+		);
+	}
+
+	/**
+	 * Test connection url build when there's a blog token or id.
+	 *
+	 * @since 8.5.0
+	 */
+	public function test_build_connect_url_proxy() {
+		// Create a user and set it up as current.
+		$user = $this->create_and_get_user( 'administrator' );
+		wp_set_current_user( $user->ID );
+
+		// Create REST request in JSON format and dispatch.
+		$response = $this->create_and_get_request( 'connection/url' );
+
+		// Success, URL was built.
+		$this->assertResponseStatus( 200, $response );
+
+		$response->data = wp_parse_url( $response->data );
+		parse_str( $response->data['query'], $response->data['query'] );
+
+		$this->assertContains( 'connect_proxy', $response->data['query'] );
+
+		unset( $response->data['query'] );
+		$this->assertResponseData(
+			array(
+				'scheme' => 'http',
+				'host'   => 'example.org',
+				'path'   => '/wp-admin/admin.php',
+			),
+			$response
 		);
 	}
 

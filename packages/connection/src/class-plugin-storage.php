@@ -7,6 +7,8 @@
 
 namespace Automattic\Jetpack\Connection;
 
+use Jetpack_Options;
+
 /**
  * The class serves a single purpose - to store the data that plugins use the connection, along with some auxiliary information.
  * Well, we don't really store all that. The information is provided on runtime,
@@ -16,7 +18,7 @@ namespace Automattic\Jetpack\Connection;
  */
 class Plugin_Storage {
 
-	const OPTION_KEY = 'connection_plugins';
+	const DISCONNECTED_PLUGINS_OPTION_NAME = 'plugins_disconnected_user_initiated';
 
 	/**
 	 * Connected plugins.
@@ -92,6 +94,52 @@ class Plugin_Storage {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Add the plugin to the set of disconnected ones.
+	 *
+	 * @param string $slug Plugin slug.
+	 *
+	 * @return bool
+	 */
+	public static function disconnect_user_initiated( $slug ) {
+		$disconnects = self::get_all_disconnected_user_initiated();
+
+		if ( ! in_array( $slug, $disconnects, true ) ) {
+			$disconnects[] = $slug;
+			Jetpack_Options::update_option( self::DISCONNECTED_PLUGINS_OPTION_NAME, $disconnects );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Remove the plugin from the set of disconnected ones.
+	 *
+	 * @param string $slug Plugin slug.
+	 *
+	 * @return bool
+	 */
+	public static function reconnect_user_initiated( $slug ) {
+		$disconnects = self::get_all_disconnected_user_initiated();
+
+		$slug_index = array_search( $slug, $disconnects, true );
+		if ( false !== $slug_index ) {
+			unset( $disconnects[ $slug_index ] );
+			Jetpack_Options::update_option( self::DISCONNECTED_PLUGINS_OPTION_NAME, $disconnects );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Get all plugins that were disconnected by user.
+	 *
+	 * @return array
+	 */
+	public static function get_all_disconnected_user_initiated() {
+		return Jetpack_Options::get_option( self::DISCONNECTED_PLUGINS_OPTION_NAME, array() );
 	}
 
 }
